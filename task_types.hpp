@@ -16,6 +16,7 @@ namespace tts {
   };
 
   struct Task;
+  struct TaskControlBlock;
 }
 
 #endif

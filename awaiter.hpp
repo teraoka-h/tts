@@ -3,12 +3,15 @@
 
 #include <coroutine>
 #include "sched.hpp"
+#include "debug.hpp"
 
 namespace tts {
   struct TaskYieldAwaiter {
     bool await_ready() { return false; };
     bool await_suspend(std::coroutine_handle<> h) {
-      std::printf("[awaiter(y)] suspend and enqueue ready\n");
+      // std::printf("[awaiter(y)] suspend and enqueue ready\n");
+      LOG_PRINT("[awaiter(y)] suspend and enqueue ready\n");
+
       Scheduler::instance().enqueueReady(h);
       return true;
     }
@@ -18,7 +21,9 @@ namespace tts {
   struct TaskFinalAwaiter {
     bool await_ready() noexcept { return false; };
     bool await_suspend(std::coroutine_handle<> h) noexcept {
-      std::printf("[awaiter(f)] suspend and enqueue finish\n");
+      // std::printf("[awaiter(f)] suspend and enqueue finish\n");
+      LOG_PRINT("[awaiter(f)] suspend and enqueue finish\n");
+
       Scheduler::instance().enqueueFinish(h);
       return true;
     }

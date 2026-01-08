@@ -1,6 +1,8 @@
 #include "sched.hpp"
 #include "task.hpp"
 
+#include "debug.hpp"
+
 namespace tts {
   TaskID TaskIDAllocator::allocate() {
     TaskID id;
@@ -21,7 +23,8 @@ namespace tts {
 
   TaskID Scheduler::registerTask(std::string name, Task&& task) {
     if (name_to_id_.contains(name)) {
-      std::printf("[sched] ERR: duplication task name: %s\n", name.c_str());
+      // std::printf("[sched] ERR: duplication task name: %s\n", name.c_str());
+      LOG_PRINTF("[sched] ERR: duplication task name: %s\n", name.c_str());
       task.handler = nullptr;
       return NameDuplicationErr;
     }
@@ -38,11 +41,12 @@ namespace tts {
     // 各マップに登録
     name_to_id_[name] = id;
     handler_to_id_[addr] = id;
-    tcb_map_[id] = std::move(tcb);
+    tcb_list_[id] = std::move(tcb);
 
-    std::printf("[sched] register task: %s(id=%d) addr:%p\n", name.c_str(), id, addr);
+    // std::printf("[sched] register task: %s(id=%d) addr:%p\n", name.c_str(), id, addr);
+    LOG_PRINTF("[sched] register task: %s(id=%d) addr:%p\n", name.c_str(), id, addr);
 
-    enqueueReady(tcb_map_[id]->handler);
+    enqueueReady(tcb_list_[id]->handler);
     return id;
   }
 
@@ -52,7 +56,8 @@ namespace tts {
     tcb.state = TaskState::Ready;
     ready_queue_.push(tcb.handler);
 
-    std::printf("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
+    // std::printf("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
+    LOG_PRINTF("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
   }
 
   void Scheduler::enqueueFinish(std::coroutine_handle<> h) {
@@ -61,7 +66,8 @@ namespace tts {
     tcb.state = TaskState::Finished;
     finish_queue_.push(tcb.handler);
 
-    std::printf("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
+    // std::printf("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
+    LOG_PRINTF("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
   }
 
   void Scheduler::removeReady(std::coroutine_handle<> h) {
@@ -73,7 +79,8 @@ namespace tts {
   }
 
   void Scheduler::run() {
-    std::printf("[sched] run.\n");
+    // std::printf("[sched] run.\n");
+    LOG_PRINT("[sched] run.\n");
 
     while (!ready_queue_.empty()) {
       std::coroutine_handle<> handler = ready_queue_.front();
@@ -86,7 +93,8 @@ namespace tts {
         continue;
       }
 
-      std::printf("[sched] resume task(id=%d)\n", (int)(tcb.id));
+      // std::printf("[sched] resume task(id=%d)\n", (int)(tcb.id));
+      LOG_PRINTF("[sched] resume task(id=%d)\n", (int)(tcb.id));
       tcb.state = TaskState::Running;
       handler.resume();
     }

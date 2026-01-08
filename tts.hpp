@@ -7,7 +7,13 @@
 #include <string>
 
 namespace tts {
-  TaskID register_task(std::string name, Task&& task);
+  TaskID create_task(std::string name, Task&& task);
+  void start_scheduler();
+
+  // awaiter api
+  inline TaskYieldAwaiter yield() {
+    return {};
+  }
 }
 
 #endif 

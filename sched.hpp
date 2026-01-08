@@ -4,13 +4,13 @@
 #include <coroutine>
 #include <queue>
 #include <unordered_map>
+#include <array>
 #include <memory>
 #include "task_types.hpp"
 
 namespace tts {
 
-  struct Task;
-  struct TaskControlBlock;
+  static constexpr TaskID MAX_TASK_NUM = 10;
 
   class TaskIDAllocator {
    private:
@@ -30,7 +30,7 @@ namespace tts {
     Scheduler() = default;
     ~Scheduler() = default;
 
-    std::unordered_map<TaskID, std::unique_ptr<TaskControlBlock>> tcb_map_;
+    std::array<std::unique_ptr<TaskControlBlock>, MAX_TASK_NUM> tcb_list_;
     std::unordered_map<std::string, TaskID> name_to_id_;
     std::unordered_map<HandlerAddr, TaskID> handler_to_id_;
     std::queue<std::coroutine_handle<>> ready_queue_;
@@ -39,12 +39,12 @@ namespace tts {
 
     TaskControlBlock& getTCBFromHandler(std::coroutine_handle<> h) {
       TaskID id = handler_to_id_.at(h.address());
-      return *(tcb_map_.at(id));
+      return *(tcb_list_[id]);
     }
 
     TaskControlBlock& getTCBFromName(std::string name) {
       TaskID id = name_to_id_.at(name);
-      return *(tcb_map_.at(id));
+      return *(tcb_list_[id]);
     }
 
    public:
