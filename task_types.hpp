@@ -3,20 +3,24 @@
 
 #include <cstdint>
 
-namespace tts {
-  using TaskID = int32_t;
-  constexpr TaskID NameDuplicationErr = -1;
+namespace tts 
+{
 
-  enum class TaskState {
-    Ready,
-    Running,
-    Yield,
-    Sleeping,
-    Finished,
-  };
+using TaskID = uint32_t;
+static constexpr TaskID MAX_TASK_NUM = 10;
+constexpr TaskID NameDuplicationErr = (MAX_TASK_NUM + 1);
 
-  struct Task;
-  struct TaskControlBlock;
+enum class TaskState {
+  Ready,
+  Running,
+  Yield,
+  Sleeping,
+  Finished,
+};
+
+struct Task;
+struct TaskControlBlock;
+
 }
 
 #endif

@@ -3,102 +3,95 @@
 
 #include "debug.hpp"
 
-namespace tts {
-  TaskID TaskIDAllocator::allocate() {
-    TaskID id;
-    if (!free_ids_.empty()) {
-      id = free_ids_.front();
-      free_ids_.pop();
-    }
-    else {
-      id = next_id++;
-    }
+namespace tts 
+{
 
-    return id;
+TaskID TaskIDAllocator::allocate() {
+  TaskID id;
+  if (!free_ids_.empty()) {
+    id = free_ids_.front();
+    free_ids_.pop();
+  }
+  else {
+    id = next_id++;
   }
 
-  void TaskIDAllocator::free(TaskID id) {
-    free_ids_.push(id);
+  return id;
+}
+
+void TaskIDAllocator::free(TaskID id) {
+  free_ids_.push(id);
+}
+
+TaskID Scheduler::registerTask(std::string name, Task&& task) {
+  if (name_to_id_.contains(name)) {
+    std::printf("[sched] ERR: duplication task name: %s\n", name.c_str());
+    task.handler = nullptr;
+    return NameDuplicationErr;
   }
 
-  TaskID Scheduler::registerTask(std::string name, Task&& task) {
-    if (name_to_id_.contains(name)) {
-      // std::printf("[sched] ERR: duplication task name: %s\n", name.c_str());
-      LOG_PRINTF("[sched] ERR: duplication task name: %s\n", name.c_str());
-      task.handler = nullptr;
-      return NameDuplicationErr;
-    }
+  std::unique_ptr<TaskControlBlock> tcb;
+  TaskID id = id_allocator_.allocate();
 
-    TaskID id = id_allocator_.allocate();
+  tcb = std::make_unique<TaskControlBlock>(
+    id, TaskState::Ready, std::move(task.handler)
+  );
 
-    std::unique_ptr<TaskControlBlock> tcb;
-    tcb = std::make_unique<TaskControlBlock>(
-      id, TaskState::Ready, std::move(task.handler)
-    );
+  HandlerAddr addr = tcb->handler.address();
 
-    HandlerAddr addr = tcb->handler.address();
+  // 各マップに登録
+  name_to_id_[name] = id;
+  handler_to_id_[addr] = id;
+  tcb_list_[id] = std::move(tcb);
 
-    // 各マップに登録
-    name_to_id_[name] = id;
-    handler_to_id_[addr] = id;
-    tcb_list_[id] = std::move(tcb);
+  LOG_PRINTF("[sched] register task: %s(id=%d) addr:%p\n", name.c_str(), id, addr);
+  enqueueReady(tcb_list_[id]->handler);
+  return id;
+}
 
-    // std::printf("[sched] register task: %s(id=%d) addr:%p\n", name.c_str(), id, addr);
-    LOG_PRINTF("[sched] register task: %s(id=%d) addr:%p\n", name.c_str(), id, addr);
+void Scheduler::enqueueReady(std::coroutine_handle<> h) {
+  TaskControlBlock& tcb = getTCBFromHandler(h);
 
-    enqueueReady(tcb_list_[id]->handler);
-    return id;
-  }
+  tcb.state = TaskState::Ready;
+  ready_queue_.push(&tcb);
 
-  void Scheduler::enqueueReady(std::coroutine_handle<> h) {
-    TaskControlBlock& tcb = getTCBFromHandler(h);
+  LOG_PRINTF("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
+}
 
-    tcb.state = TaskState::Ready;
-    ready_queue_.push(tcb.handler);
+void Scheduler::enqueueFinish(std::coroutine_handle<> h) {
+  TaskControlBlock& tcb = getTCBFromHandler(h);
 
-    // std::printf("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
-    LOG_PRINTF("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
-  }
+  tcb.state = TaskState::Finished;
+  finish_queue_.push(&tcb);
 
-  void Scheduler::enqueueFinish(std::coroutine_handle<> h) {
-    TaskControlBlock& tcb = getTCBFromHandler(h);
+  // std::printf("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
+  LOG_PRINTF("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
+}
 
+void Scheduler::removeReady(std::coroutine_handle<> h) {
+  TaskControlBlock& tcb = getTCBFromHandler(h);
+
+  if (tcb.state == TaskState::Ready) {
     tcb.state = TaskState::Finished;
-    finish_queue_.push(tcb.handler);
-
-    // std::printf("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
-    LOG_PRINTF("[sched] enqueue ready task(id=%d)\n", (int)(tcb.id));
   }
+}
 
-  void Scheduler::removeReady(std::coroutine_handle<> h) {
-    TaskControlBlock& tcb = getTCBFromHandler(h);
+void Scheduler::run() {
+  LOG_PRINT("[sched] run.\n");
 
-    if (tcb.state == TaskState::Ready) {
-      tcb.state = TaskState::Finished;
+  while (!ready_queue_.empty()) {
+    TaskControlBlock* tcb = ready_queue_.front();
+    ready_queue_.pop();
+
+    if (tcb->state != TaskState::Ready) {
+      std::printf("[sched] task is not ready\n");
+      continue;
     }
+
+    LOG_PRINTF("[sched] resume task(id=%d)\n", (int)(tcb.id));
+    tcb->state = TaskState::Running;
+    tcb->handler.resume();
   }
-
-  void Scheduler::run() {
-    // std::printf("[sched] run.\n");
-    LOG_PRINT("[sched] run.\n");
-
-    while (!ready_queue_.empty()) {
-      std::coroutine_handle<> handler = ready_queue_.front();
-      ready_queue_.pop();
-
-      TaskControlBlock& tcb = getTCBFromHandler(handler);
-
-      if (tcb.state != TaskState::Ready) {
-        std::printf("[sched] task is not ready\n");
-        continue;
-      }
-
-      // std::printf("[sched] resume task(id=%d)\n", (int)(tcb.id));
-      LOG_PRINTF("[sched] resume task(id=%d)\n", (int)(tcb.id));
-      tcb.state = TaskState::Running;
-      handler.resume();
-    }
-  }
-
+}
 
 }
