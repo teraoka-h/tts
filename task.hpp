@@ -29,9 +29,9 @@ struct TaskPromise {
     return Task {
       std::coroutine_handle<TaskPromise>::from_promise(*this)
     }; 
-  };
-  std::suspend_always initial_suspend() { return {}; };
-  auto final_suspend() noexcept { return TaskFinalAwaiter{}; };
+  }
+  std::suspend_always initial_suspend() { return {}; }
+  TaskFinalAwaiter final_suspend() noexcept { return TaskFinalAwaiter{}; }
   void return_void() {};
   void unhandled_exception() { std::terminate(); }
 };

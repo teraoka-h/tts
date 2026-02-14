@@ -24,14 +24,14 @@ TaskState get_task_state(std::string task_name) {
 // task operating
 bool task_suspend(std::string task_name) {
   Scheduler& sched = Scheduler::instance(); 
-  TaskID id = sched.getTaskID(task_name);
+  task_id_t id = sched.getTaskID(task_name);
 
   return sched.requestSuspend(id);
 }
 
 bool task_resume(std::string task_name) {
   Scheduler& sched = Scheduler::instance();
-  TaskID id = sched.getTaskID(task_name);
+  task_id_t id = sched.getTaskID(task_name);
 
   return sched.requestResume(id);
 }

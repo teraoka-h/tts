@@ -6,7 +6,6 @@
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
 #include <linux/poll.h>
-
 #include <linux/version.h>
 #include <linux/errno.h>
 #include <linux/printk.h>
@@ -22,10 +21,6 @@
 
 MODULE_LICENSE("Dual BSD/GPL");
 
-// static struct hrtimer timer;
-
-#define task_id_t uint8_t
-
 struct proc_timer_ctx;
 
 struct task_timer {
@@ -37,8 +32,9 @@ struct task_timer {
 struct proc_timer_ctx {
   struct task_timer timers[MAX_TASK_NUM];
   DECLARE_KFIFO(expired_ids, task_id_t, 16);
-  spinlock_t fifo_lock;
+  spinlock_t lock;
   wait_queue_head_t wq;
+  bool cancel_req;
 };
 
 /* Module Finctions */
@@ -47,32 +43,32 @@ static enum hrtimer_restart timer_callback(struct hrtimer *t) {
   struct task_timer *ttimer = container_of(t, struct task_timer, timer);
   struct proc_timer_ctx* ctx = ttimer->ctx;
 
-  pr_info("tts_timer: callback (task_id=%d)\n", ttimer->task_id);
+  pr_info("tts_timer: ttimer callback (task_id=%d)", ttimer->task_id);
 
-  // kfifo にタスクID push
-  spin_lock(&(ctx->fifo_lock));
+  spin_lock(&(ctx->lock));
 
   if (!kfifo_put(&(ctx->expired_ids), ttimer->task_id)) {
     pr_info("tts_timer: kfifo is full\n");
   }
 
-  spin_unlock(&(ctx->fifo_lock));
-
+  spin_unlock(&(ctx->lock));
+  // 割り込み可能状態な対応プロセスを実行状態へ
   wake_up_interruptible(&(ctx->wq));
 
   int len = kfifo_len(&(ctx->expired_ids));
-  pr_info("tts_timer: kfifo elements = %d\n", len);
-  pr_info("tts_timer: finish timer callback (task_id=%d)\n", ttimer->task_id);
-  // kfree(ttimer);
+  pr_info("  kfifo elements = %d\n", len);
 
+  // タイマーを再度起動させない
   return HRTIMER_NORESTART;
 }
 
-struct proc_timer_ctx* proc_timer_ctx_create(void) {
+static struct proc_timer_ctx* proc_timer_ctx_create(void) {
   struct proc_timer_ctx *ctx = kzalloc(sizeof(struct proc_timer_ctx), GFP_KERNEL);
 
+  ctx->cancel_req = false;
+
   INIT_KFIFO(ctx->expired_ids);
-  spin_lock_init(&(ctx->fifo_lock));
+  spin_lock_init(&(ctx->lock));
   init_waitqueue_head(&(ctx->wq));
 
   for (size_t i = 0; i < MAX_TASK_NUM; i++) {
@@ -84,7 +80,7 @@ struct proc_timer_ctx* proc_timer_ctx_create(void) {
   return ctx;
 }
 
-void proc_timer_ctx_destroy(struct proc_timer_ctx *ctx) {
+static void proc_timer_ctx_destroy(struct proc_timer_ctx *ctx) {
   for (size_t i = 0; i < MAX_TASK_NUM; i++) {
     hrtimer_cancel(&(ctx->timers[i].timer));
   }
@@ -115,10 +111,11 @@ static long tts_timer_ioctl(struct file *file, unsigned int cmd, unsigned long a
       int ret = copy_from_user(&req_arg, (ioctl_sleep_req_arg __user *)arg, sizeof(req_arg));
       if (ret) {
         pr_info("tts_timer: failed to copy user data\n");
-        return 0;
+        return -EFAULT;
       }
 
       if (req_arg.task_id >= MAX_TASK_NUM) {
+        pr_info("tts_timer: task_id is lager than MAX\n");
         return -EINVAL;
       }
 
@@ -132,16 +129,69 @@ static long tts_timer_ioctl(struct file *file, unsigned int cmd, unsigned long a
       break;
     }
     case TTS_GET_EXPIRED_COUNT_CMD: {
-      uint32_t count;
+      uint8_t count;
       unsigned long flags;
 
-      spin_lock_irqsave(&(ctx->fifo_lock), flags);
+      spin_lock_irqsave(&(ctx->lock), flags);
       count = kfifo_len(&(ctx->expired_ids));
-      spin_unlock_irqrestore(&(ctx->fifo_lock), flags);
+      spin_unlock_irqrestore(&(ctx->lock), flags);
 
-      if(copy_to_user((void __user *)arg, &count, sizeof(count))) {
+      int ret = copy_to_user((uint8_t __user *)arg, &count, sizeof(count));
+      if(ret) {
+        pr_info("tts_timer: failed copy_to_user\n");
         return -EFAULT;
       }
+
+      break;
+    }
+    case TTS_GET_TASK_TIMER_ACTIVE: {
+      task_id_t task_id;
+      int ret = copy_from_user(&task_id, (task_id_t __user *)arg, sizeof(task_id));
+      
+      if (ret) {
+        pr_info("tts_timer: failed copy_from_user\n");
+        return 0;
+      }
+
+      if (task_id >= MAX_TASK_NUM) {
+        pr_info("tts_timer: task_id is lager than MAX\n");
+        return -EINVAL;
+      }
+
+      struct proc_timer_ctx *ctx = (struct proc_timer_ctx *)(file->private_data);
+      struct hrtimer *timer = &(ctx->timers[task_id].timer);
+      
+      uint8_t is_active = 0;
+
+      if (hrtimer_is_queued(timer)) {
+        is_active = 1;
+      }
+
+      ret = copy_to_user((uint8_t __user *)arg, &is_active, sizeof(is_active));
+      if (ret) {
+        pr_info("tts_timer: failed copy_to_user\n");
+        return -EFAULT;
+      }
+
+      break;
+    }
+    case TTS_CANCEL_SLEEP_CMD: {
+      task_id_t task_id;
+      int ret = copy_from_user(&task_id, (task_id_t __user *)arg, sizeof(task_id));
+      if (ret) {
+        pr_info("tts_timer: failed copy_from_user\n");
+        return -EFAULT;
+      }
+
+      if (task_id >= MAX_TASK_NUM) {
+        pr_info("tts_timer: task_id is lager than MAX\n");
+        return -EINVAL;
+      }
+
+      struct proc_timer_ctx *ctx = (struct proc_timer_ctx *)(file->private_data);
+      struct hrtimer *timer = &(ctx->timers[task_id].timer);
+
+      hrtimer_cancel(timer);
 
       break;
     }
@@ -159,16 +209,18 @@ static __poll_t tts_timer_poll(struct file *file, struct poll_table_struct *ptab
   poll_wait(file, &(ctx->wq), ptable);
 
   unsigned long flags;
-  spin_lock_irqsave(&(ctx->fifo_lock), flags);
+  spin_lock_irqsave(&(ctx->lock), flags);
+
+  // キューが空でないなら即復帰
   if (!kfifo_is_empty(&(ctx->expired_ids))) {
     mask |= (POLLIN | POLLRDNORM);
   }  
-  spin_unlock_irqrestore(&(ctx->fifo_lock), flags);
+  spin_unlock_irqrestore(&(ctx->lock), flags);
   
   return mask;
 }
 
-ssize_t tts_timer_read(struct file *file, char __user *buf, size_t count, loff_t *ppos) {
+static ssize_t tts_timer_read(struct file *file, char __user *buf, size_t count, loff_t *ppos) {
   pr_info("tts_timer: (pid=%d) read\n", current->pid);
 
   struct proc_timer_ctx *ctx = (struct proc_timer_ctx *)(file->private_data);
@@ -181,17 +233,17 @@ ssize_t tts_timer_read(struct file *file, char __user *buf, size_t count, loff_t
   size_t max = count - (count % sizeof(task_id_t));
 
   unsigned long flags;
-  spin_lock_irqsave(&(ctx->fifo_lock), flags);
+  spin_lock_irqsave(&(ctx->lock), flags);
 
   if (kfifo_is_empty(&(ctx->expired_ids))) {
-    spin_unlock_irqrestore(&(ctx->fifo_lock), flags);
+    spin_unlock_irqrestore(&(ctx->lock), flags);
     return -EAGAIN;
   }
 
+  // キューの全要素をpopしてdevfileへコピー
   kfifo_to_user(&(ctx->expired_ids), buf, max, &copied_size);
 
-  spin_unlock_irqrestore(&(ctx->fifo_lock), flags);
-
+  spin_unlock_irqrestore(&(ctx->lock), flags);
   pr_info("tts_timer: (pid=%d) copy to user (fifo ids) size: %d\n", current->pid, copied_size);
 
   return copied_size;

@@ -2,13 +2,14 @@
 #define TASK_TYPES_H
 
 #include <cstdint>
+#include <coroutine>
 #include "tts_config.h"
 
 namespace tts 
 {
 
-using TaskID = uint32_t;
-constexpr TaskID NameDuplicationErr = (MAX_TASK_NUM + 1);
+using task_id_t = uint8_t;
+constexpr task_id_t NameDuplicationErr = (MAX_TASK_NUM + 1);
 
 enum class TaskState {
   Ready,
@@ -21,11 +22,11 @@ enum class TaskState {
 struct Task;
 
 struct TaskControlBlock {
-  TaskID id;
+  task_id_t id;
   TaskState state;
   std::coroutine_handle<> handler;
 
-  TaskControlBlock(TaskID id_, TaskState state_, std::coroutine_handle<> handler_):
+  TaskControlBlock(task_id_t id_, TaskState state_, std::coroutine_handle<> handler_):
     id(id_), state(state_), handler(handler_) 
     {
 

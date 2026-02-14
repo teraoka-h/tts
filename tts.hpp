@@ -11,7 +11,7 @@ namespace tts
 {
 
 template <typename TaskFunc>
-TaskID create_task(std::string name, TaskFunc&& task) {
+task_id_t create_task(std::string name, TaskFunc&& task) {
   return Scheduler::instance().registerTask(name, task());
 }
 
@@ -25,7 +25,7 @@ bool task_resume(std::string task_name);
 // task utilities
 TaskState get_task_state(std::string task_name);
 
-// awaiter api
+//  api
 inline TaskYieldAwaiter yield() {
   return {};
 }
@@ -34,8 +34,8 @@ inline TaskSuspendAwaiter suspend() {
   return {};
 }
 
-inline TaskSleepAwaiter sleep(uint64_t ms) {
-  return TaskSleepAwaiter { .sleep_ms = ms };
+inline TaskSleepAwaiter sleep_ms(uint64_t ms) {
+  return TaskSleepAwaiter { .sleep_ns = (ms * 1000000) };
 }
 
 }
