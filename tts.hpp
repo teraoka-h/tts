@@ -10,22 +10,23 @@
 namespace tts 
 {
 
-template <typename TaskFunc>
-task_id_t create_task(std::string name, TaskFunc&& task) {
-  return Scheduler::instance().registerTask(name, task());
-}
-
 // scheduling
 void start_scheduler();
 
 // task operationg 
+template <typename TaskFunc>
+task_id_t task_create(std::string name, TaskFunc&& task) {
+  return Scheduler::instance().registerTask(name, task());
+}
+
 bool task_suspend(std::string task_name);
 bool task_resume(std::string task_name);
+bool task_abort_sleep(std::string task_name);
 
 // task utilities
 TaskState get_task_state(std::string task_name);
 
-//  api
+// awaiter api
 inline TaskYieldAwaiter yield() {
   return {};
 }

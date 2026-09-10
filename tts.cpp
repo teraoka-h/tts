@@ -36,4 +36,8 @@ bool task_resume(std::string task_name) {
   return sched.requestResume(id);
 }
 
+bool task_abort_sleep(std::string task_name) {
+    
+}
+
 }

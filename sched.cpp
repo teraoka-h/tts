@@ -122,6 +122,10 @@ bool Scheduler::requestSleep(std::coroutine_handle<> h, uint64_t sleep_ns) {
   return true;
 }
 
+void Scheduler::requestAbort(task_id_t id) {
+  
+}
+
 void Scheduler::removeReady(std::coroutine_handle<> h) {
   TaskControlBlock& tcb = getTCBFromHandler(h);
 

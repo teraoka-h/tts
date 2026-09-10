@@ -91,6 +91,7 @@ class Scheduler {
   bool requestSleep(std::coroutine_handle<> h, uint64_t sleep_ns);
   bool requestSuspend(task_id_t id);
   bool requestResume(task_id_t id);
+  void requestAbort(task_id_t id);
   void removeReady(std::coroutine_handle<> h);
   void run();
 };

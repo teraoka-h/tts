@@ -14,9 +14,6 @@
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
 
-// for fifo
-#include <linux/kfifo.h>
-
 #include "../tts_ioctl.h"
 
 MODULE_LICENSE("Dual BSD/GPL");
