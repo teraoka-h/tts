@@ -33,6 +33,17 @@ bool TimerBridge::addRequest(task_id_t id, uint64_t ns) {
   return true;
 }
 
+void TimerBridge::abortSleepTimer(task_id_t id) {
+  if (id > MAX_TASK_NUM) {
+    return;
+  }
+
+  int ret = ioctl(fd_, TTS_ABORT_SLEEP_CMD, &id);
+  if (ret < 0) {
+    return;
+  }
+}
+
 bool TimerBridge::hasExpiredIDs() const {
   uint8_t has_expired;
   int ret = ioctl(fd_, TTS_HAS_EXPIRED_CMD, &has_expired);

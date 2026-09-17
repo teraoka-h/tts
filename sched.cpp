@@ -105,6 +105,7 @@ bool Scheduler::requestResume(task_id_t id) {
 
 bool Scheduler::requestSleep(std::coroutine_handle<> h, uint64_t sleep_ns) {
   TaskControlBlock& tcb = getTCBFromHandler(h);
+
   if (tcb.state != TaskState::Running) {
     return false;
   }
@@ -113,17 +114,30 @@ bool Scheduler::requestSleep(std::coroutine_handle<> h, uint64_t sleep_ns) {
   if (sleep_ns == 0) {
     enqueueReady(h);
   }
-
-  if (!kernel_timer_.addRequest(tcb.id, sleep_ns)) {
-    return false;
+  else {
+    if (!kernel_timer_.addRequest(tcb.id, sleep_ns)) {
+      return false;
+    }
   }
 
   tcb.state = TaskState::Blocked;
   return true;
 }
 
-void Scheduler::requestAbort(task_id_t id) {
-  
+void Scheduler::abortSleep(task_id_t id) {
+  TaskControlBlock& tcb = *(tcb_list_.at(id));
+
+  // Blocked 状態でなければスキップ
+  if (tcb.state != TaskState::Blocked) {
+    return;
+  }
+
+  kernel_timer_.abortSleepTimer(id);
+
+  if (tcb.state == TaskState::Blocked) {
+    tcb.state = TaskState::Ready;
+    ready_queue_.push(&tcb);
+  }
 }
 
 void Scheduler::removeReady(std::coroutine_handle<> h) {
@@ -137,17 +151,22 @@ void Scheduler::removeReady(std::coroutine_handle<> h) {
 void Scheduler::run() {
   LOG_PRINT("[sched] run.\n");
 
-  for (int i = 0; i < num_tasks_; i++) {
+  // すべてのタスクを Ready にする
+  for (task_id_t i = 0; i < num_tasks_; i++) {
     enqueueReady(i);
   }
 
+  // 全タスクが Finished になるまでスケジューリング
   while (!allTaskFinished()) {
+
+    // Ready Queue が空なら，スリープ中のタイマーの経過を待つ
     if (ready_queue_.empty()) {
       if (!kernel_timer_.hasExpiredIDs()) {
         kernel_timer_.wait();
       }
     }
 
+    // スリープが終了したタスクを Ready Queue に push
     if (kernel_timer_.hasExpiredIDs()) { 
       expired_bitmap_t bitmap = kernel_timer_.readExpiredIDMap();
 
@@ -166,13 +185,16 @@ void Scheduler::run() {
       }
     }
 
+    // Ready Queue からタスクを取り出す
     TaskControlBlock* tcb = ready_queue_.front();
     ready_queue_.pop();
 
+    // Ready 状態でないタスクはスキップ (suspend されたタスクなど)
     if (tcb->state != TaskState::Ready) {
       continue;
     }
 
+    // タスクを Run にして，コルーチンを再開
     LOG_PRINTF("[sched] resume task(id=%d)\n", (int)(tcb->id));
     tcb->state = TaskState::Running;
     running_task_id_ = tcb->id;

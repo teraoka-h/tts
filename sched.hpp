@@ -23,9 +23,19 @@ class TaskIDAllocator {
   void free(task_id_t id);
 };
 
-class SleepTimerHandler {
+// Ready Queue
+class ReadyQueue {
  private:
-  int fd_;
+  std::array<std::queue<TaskControlBlock*>, static_cast<size_t>(TaskPriority::Count)> queues_;
+
+ public:
+  ReadyQueue();
+  ~ReadyQueue();
+
+  TaskControlBlock* pop();
+  void   push(TaskControlBlock* tcb);
+  bool   empty(TaskPriority priority) const;
+  size_t size(TaskPriority priority) const;
 };
 
 // スケジューラは singleton
@@ -91,7 +101,7 @@ class Scheduler {
   bool requestSleep(std::coroutine_handle<> h, uint64_t sleep_ns);
   bool requestSuspend(task_id_t id);
   bool requestResume(task_id_t id);
-  void requestAbort(task_id_t id);
+  void abortSleep(task_id_t id);
   void removeReady(std::coroutine_handle<> h);
   void run();
 };

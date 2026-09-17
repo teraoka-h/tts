@@ -8,9 +8,7 @@
 namespace tts 
 {
 
-using task_id_t = uint8_t;
-constexpr task_id_t NameDuplicationErr = (MAX_TASK_NUM + 1);
-
+// タスクの状態
 enum class TaskState {
   Ready,
   Running,
@@ -18,6 +16,17 @@ enum class TaskState {
   Suspended,
   Finished,
 };
+
+// タスクの優先度
+enum class TaskPriority {
+  Low,
+  Normal,
+  High,
+  Count,
+};
+
+using task_id_t = uint8_t;
+constexpr task_id_t NameDuplicationErr = (MAX_TASK_NUM + 1);
 
 struct Task;
 

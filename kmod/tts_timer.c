@@ -39,13 +39,13 @@ static enum hrtimer_restart timer_callback(struct hrtimer *t) {
   struct task_timer *ttimer = container_of(t, struct task_timer, timer);
   struct proc_timer_ctx* ctx = ttimer->ctx;
 
-  // pr_info("tts_timer: ttimer callback (task_id=%d)", ttimer->task_id);
+  pr_info("tts_timer: ttimer callback (task_id=%d)", ttimer->task_id);
 
   set_bit(ttimer->task_id, &(ctx->expired_bitmap));
   // 割り込み可能状態な対応プロセスを実行状態へ
   wake_up_interruptible(&(ctx->wq));
 
-  // pr_info("  bitmap: %0x\n", ctx->expired_bitmap);
+  pr_info("  bitmap: %#08X\n", ctx->expired_bitmap);
 
   // タイマーを再度起動させない
   return HRTIMER_NORESTART;
@@ -76,7 +76,7 @@ static void proc_timer_ctx_destroy(struct proc_timer_ctx *ctx) {
 }
 
 static int tts_timer_open(struct inode *inode, struct file *file) {
-  // pr_info("tts_timer: (pid=%d) open\n", current->pid);
+  pr_info("tts_timer: (pid=%d) open\n", current->pid);
 
   struct proc_timer_ctx *ctx = proc_timer_ctx_create();
   if (ctx == NULL) {
@@ -88,13 +88,14 @@ static int tts_timer_open(struct inode *inode, struct file *file) {
 }
 
 static long tts_timer_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
-  // pr_info("tts_timer: (pid=%d) ioctl\n", current->pid);
+  pr_info("tts_timer: (pid=%d) ioctl\n", current->pid);
 
   struct proc_timer_ctx *ctx = (struct proc_timer_ctx *)(file->private_data);
 
   switch (cmd) {
-    case TTS_SLEEP_REQ_CMD: {
+    case TTS_SLEEP_REQ_CMD: { /* sleep 用タイマーの起動 */
       ioctl_sleep_req_arg req_arg;
+
       int ret = copy_from_user(&req_arg, (ioctl_sleep_req_arg __user *)arg, sizeof(req_arg));
       if (ret) {
         pr_info("tts_timer: failed to copy user data\n");
@@ -102,24 +103,27 @@ static long tts_timer_ioctl(struct file *file, unsigned int cmd, unsigned long a
       }
 
       if (req_arg.task_id >= MAX_TASK_NUM) {
-        pr_info("tts_timer: task_id is lager than MAX\n");
+        pr_info("tts_timer: task_id [%d] is lager than MAX\n", req_arg.task_id);
         return -EINVAL;
       }
 
+      // 現在時刻からの相対時間でタイマーを起動する
       task_id_t task_id = req_arg.task_id;
       uint64_t  sleep_ns = req_arg.sleep_ns;
       struct hrtimer *timer = &(ctx->timers[task_id].timer);
       ktime_t sleep_time = ktime_set(0, sleep_ns);
 
-      // pr_info("  Add timer (task_id=%d, ns=%lu)\n", task_id, sleep_ns);
+      pr_info("  Add timer (task_id=%d, ns=%lu)\n", task_id, sleep_ns);
       hrtimer_start(timer, sleep_time, HRTIMER_MODE_REL);
       break;
     }
-    case TTS_HAS_EXPIRED_CMD: {
+    case TTS_HAS_EXPIRED_CMD: { /* 経過したタイマーがあるかを確認 */
       uint8_t has_expired;
+
+      // いづれかの Bit が立っているかを確認
       has_expired = (READ_ONCE(ctx->expired_bitmap) != 0) ? 1 : 0;
       
-      // pr_info("  has_expired: %d\n", has_expired);
+      pr_info("  check has_expired: %d\n", has_expired);
 
       int ret = copy_to_user((uint8_t __user *)arg, &has_expired, sizeof(has_expired));
       if(ret) {
@@ -129,7 +133,7 @@ static long tts_timer_ioctl(struct file *file, unsigned int cmd, unsigned long a
 
       break;
     }
-    case TTS_ABORT_SLEEP_CMD: {
+    case TTS_ABORT_SLEEP_CMD: { /* sleep 用タイマーの停止 */
       task_id_t task_id;
       int ret = copy_from_user(&task_id, (task_id_t __user *)arg, sizeof(task_id));
       if (ret) {
@@ -138,7 +142,7 @@ static long tts_timer_ioctl(struct file *file, unsigned int cmd, unsigned long a
       }
 
       if (task_id >= MAX_TASK_NUM) {
-        pr_info("tts_timer: task_id is lager than MAX\n");
+        pr_info("tts_timer: task_id [%d] is lager than MAX\n", task_id);
         return -EINVAL;
       }
 
@@ -147,18 +151,19 @@ static long tts_timer_ioctl(struct file *file, unsigned int cmd, unsigned long a
 
       hrtimer_cancel(timer);
 
+      // ビットマップ取得前に経過している場合はタイマーのビットをクリア
       if (test_bit(task_id, &(ctx->expired_bitmap))) {
         clear_bit(task_id, &(ctx->expired_bitmap));
       }
 
       break;
     }
-    case TTS_GET_EXPIRED_BITMAP_CMD: {
+    case TTS_GET_EXPIRED_BITMAP_CMD: { /* 経過したタイマーのビットマップを取得 */
       expired_bitmap_t bitmap = xchg(&(ctx->expired_bitmap), 0);
 
       int ret = copy_to_user((expired_bitmap_t __user *)arg, &bitmap, sizeof(bitmap));
      
-      // pr_info("  expired bitmap: %0x\n", READ_ONCE(bitmap));
+      pr_info("  get expired bitmap: %#08X\n", READ_ONCE(bitmap));
 
       if (ret) {
         pr_info("tts_timer: failed copy_from_user\n");
@@ -173,7 +178,7 @@ static long tts_timer_ioctl(struct file *file, unsigned int cmd, unsigned long a
 }
 
 static __poll_t tts_timer_poll(struct file *file, struct poll_table_struct *ptable) {
-  // pr_info("tts_timer: (pid=%d) poll\n", current->pid);
+  pr_info("tts_timer: (pid=%d) poll\n", current->pid);
 
   __poll_t mask = 0;
   struct proc_timer_ctx *ctx = (struct proc_timer_ctx *)(file->private_data);
@@ -188,13 +193,13 @@ static __poll_t tts_timer_poll(struct file *file, struct poll_table_struct *ptab
 }
 
 static ssize_t tts_timer_read(struct file *file, char __user *buf, size_t count, loff_t *ppos) {
-  // pr_info("tts_timer: (pid=%d) read\n", current->pid);
+  pr_info("tts_timer: (pid=%d) read\n", current->pid);
 
   return 0;
 }
 
 static int tts_timer_release(struct inode *inode, struct file *file) {
-  // pr_info("tts_timer: (pid=%d) release\n", current->pid);
+  pr_info("tts_timer: (pid=%d) release\n", current->pid);
 
   proc_timer_ctx_destroy((struct proc_timer_ctx *)(file->private_data));
   return 0;

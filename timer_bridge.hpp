@@ -22,6 +22,7 @@ class TimerBridge {
   ~TimerBridge();
 
   bool addRequest(task_id_t id, uint64_t ns);
+  void abortSleepTimer(task_id_t id);
   bool hasExpiredIDs() const;
   void wait(int32_t timeout_ms = -1);
   expired_bitmap_t readExpiredIDMap();
