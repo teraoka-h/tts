@@ -33,10 +33,11 @@ struct Task;
 struct TaskControlBlock {
   task_id_t id;
   TaskState state;
+  TaskPriority priority;
   std::coroutine_handle<> handler;
 
-  TaskControlBlock(task_id_t id_, TaskState state_, std::coroutine_handle<> handler_):
-    id(id_), state(state_), handler(handler_) 
+  TaskControlBlock(task_id_t id_, TaskState state_, TaskPriority priority_, std::coroutine_handle<> handler_):
+    id(id_), state(state_), priority(priority_), handler(handler_) 
     {
 
     }

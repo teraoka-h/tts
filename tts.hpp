@@ -15,8 +15,8 @@ void start_scheduler();
 
 // task operationg 
 template <typename TaskFunc>
-task_id_t task_create(std::string name, TaskFunc&& task) {
-  return Scheduler::instance().registerTask(name, task());
+task_id_t task_create(std::string name, TaskFunc&& task, TaskPriority priority = TaskPriority::Normal) {
+  return Scheduler::instance().registerTask(name, task(), priority);
 }
 
 bool task_suspend(std::string task_name);
